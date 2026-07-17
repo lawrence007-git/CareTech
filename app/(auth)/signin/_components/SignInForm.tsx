@@ -3,8 +3,10 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { ConvexError } from "convex/values";
 import { useAuthActions } from "@convex-dev/auth/react";
+import { CheckCircle2 } from "lucide-react";
 import { AuthField } from "../../_components/AuthField";
 import { AuthSubmit } from "../../_components/AuthSubmit";
 import { required, validateEmail, type Errors } from "@/lib/validation";
@@ -22,6 +24,10 @@ function validate(values: { email: string; password: string }): Errors<FieldName
 
 export function SignInForm() {
   const { signIn } = useAuthActions();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const justCreated = searchParams.get("created") === "1";
+
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -51,15 +57,13 @@ export function SignInForm() {
         password: values.password,
         flow: "signIn",
       });
-      // On success, ConvexAuthNextjsProvider updates auth state and the
-      // middleware/route redirect (see middleware.ts) takes it from here.
+      router.push("/");
     } catch (err) {
       setFormError(
         err instanceof ConvexError
           ? err.data
           : "Couldn't sign in. Check your email and password and try again.",
       );
-    } finally {
       setLoading(false);
     }
   }
@@ -68,7 +72,7 @@ export function SignInForm() {
     setFormError(null);
     setGoogleLoading(true);
     try {
-      await signIn("google");
+      await signIn("google", { redirectTo: "/" });
     } catch {
       setFormError("Couldn't start Google sign-in. Please try again.");
       setGoogleLoading(false);
@@ -77,6 +81,13 @@ export function SignInForm() {
 
   return (
     <div className="space-y-5">
+      {justCreated && (
+        <p className="flex items-center gap-2 rounded-md bg-primary/10 px-3 py-2 text-sm font-medium text-primary">
+          <CheckCircle2 className="h-4 w-4 shrink-0" />
+          Account created — sign in to continue.
+        </p>
+      )}
+
       <button
         type="button"
         onClick={onGoogleSignIn}

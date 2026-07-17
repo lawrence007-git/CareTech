@@ -16,8 +16,10 @@ const CareTechPassword = Password<DataModel>({
       name: `${params.firstName ?? ""} ${params.lastName ?? ""}`.trim() || undefined,
       firstName: params.firstName as string | undefined,
       lastName: params.lastName as string | undefined,
-      // Default new sign-ups to "staff" if no role was supplied (e.g. during sign-in).
-      role: (params.role as "admin" | "staff" | "customer" | undefined) ?? "staff",
+      // The sign-up form no longer exposes a role picker — every new
+      // password sign-up (and any OAuth sign-up, which never sends `role`
+      // at all) defaults to "customer".
+      role: (params.role as "admin" | "staff" | "customer" | undefined) ?? "customer",
     };
   },
   validatePasswordRequirements: (password: string) => {

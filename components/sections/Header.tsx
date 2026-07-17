@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Menu, X } from "lucide-react";
 import { ThemeToggle } from "../layout/ThemeToggle";
+import { AccountMenu } from "../layout/AccountMenu";
 
 const links = [
   { href: "#capabilities", label: "Capabilities" },
@@ -60,12 +61,7 @@ export function Header() {
 
         <div className="flex items-center gap-2">
           <ThemeToggle />
-          <a
-            href="/signin"
-            className="hidden h-10 items-center rounded-full bg-foreground px-4 text-sm font-medium text-background transition-opacity hover:opacity-90 md:inline-flex"
-          >
-            Start a build
-          </a>
+          <AccountMenu />
           <button
             type="button"
             aria-label="Toggle menu"
@@ -90,13 +86,13 @@ export function Header() {
                 {l.label}
               </a>
             ))}
-            <a
-              href="#contact"
+            <Link
+              href="/dashboard"
               onClick={() => setOpen(false)}
               className="mt-2 inline-flex h-10 items-center justify-center rounded-full bg-foreground text-sm font-medium text-background"
             >
-              Start a build
-            </a>
+              Go to Dashboard
+            </Link>
           </nav>
         </div>
       )}

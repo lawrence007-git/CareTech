@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { FormEvent } from "react";
+import { useRouter } from "next/navigation";
 import { ConvexError } from "convex/values";
 import { useAuthActions } from "@convex-dev/auth/react";
 import { AuthField } from "../../_components/AuthField";
@@ -16,7 +17,6 @@ type Values = {
   email: string;
   password: string;
   confirmPassword: string;
-  role: string;
 };
 
 function validate(values: Values): Errors<FieldName> {
@@ -30,7 +30,8 @@ function validate(values: Values): Errors<FieldName> {
 }
 
 export function SignUpForm() {
-  const { signIn } = useAuthActions();
+  const { signIn, signOut } = useAuthActions();
+  const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -40,7 +41,6 @@ export function SignUpForm() {
     email: "",
     password: "",
     confirmPassword: "",
-    role: "staff",
   });
   const [errors, setErrors] = useState<Errors<FieldName>>({});
   const [formError, setFormError] = useState<string | null>(null);
@@ -66,18 +66,20 @@ export function SignUpForm() {
         password: values.password,
         firstName: values.firstName,
         lastName: values.lastName,
-        role: values.role,
+        role: "customer",
         flow: "signUp",
       });
-      // Success: Convex Auth's session cookie/token is set and the
-      // middleware will let the now-authenticated user through.
+      // Convex Auth's signUp flow authenticates immediately — sign back out
+      // so the person has to log in deliberately with the credentials they
+      // just set, rather than landing in the app already authenticated.
+      await signOut();
+      router.push("/signin?created=1");
     } catch (err) {
       setFormError(
         err instanceof ConvexError
           ? err.data
           : "Couldn't create your account. That email may already be in use.",
       );
-    } finally {
       setLoading(false);
     }
   }
@@ -86,7 +88,9 @@ export function SignUpForm() {
     setFormError(null);
     setGoogleLoading(true);
     try {
-      await signIn("google");
+      // Google is inherently "authenticate now" — there's no separate
+      // create-then-sign-in step for OAuth, so this signs them straight in.
+      await signIn("google", { redirectTo: "/" });
     } catch {
       setFormError("Couldn't start Google sign-in. Please try again.");
       setGoogleLoading(false);
@@ -172,19 +176,6 @@ export function SignUpForm() {
           onChange={(e) => set("confirmPassword", e.target.value)}
           error={errors.confirmPassword}
         />
-        <label className="block">
-          <span className="text-sm font-medium">Role</span>
-          <select
-            name="role"
-            value={values.role}
-            onChange={(e) => set("role", e.target.value)}
-            className="mt-1.5 block w-full rounded-md border border-border bg-surface px-3 py-2.5 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
-          >
-            <option value="admin">Admin</option>
-            <option value="staff">Staff</option>
-            <option value="customer">Customer</option>
-          </select>
-        </label>
         <AuthSubmit disabled={loading}>{loading ? "Creating account…" : "Create account"}</AuthSubmit>
       </form>
     </div>
