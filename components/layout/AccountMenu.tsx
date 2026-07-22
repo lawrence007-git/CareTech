@@ -20,6 +20,10 @@ function AccountAvatarMenu() {
   const user = useQuery(api.users.current);
   const { signOut } = useAuthActions();
   const [open, setOpen] = useState(false);
+  // Google's photo URL can occasionally 404/expire, or fail to load in dev
+  // (CORS, hotlink protection, etc). If it fails, fall back to initials
+  // instead of showing a broken image icon.
+  const [imageFailed, setImageFailed] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -31,7 +35,14 @@ function AccountAvatarMenu() {
     return () => document.removeEventListener("mousedown", onClick);
   }, [open]);
 
+  // Reset the "failed" flag if the user's image URL itself changes (e.g.
+  // they re-link Google and get a fresh photo).
+  useEffect(() => {
+    setImageFailed(false);
+  }, [user?.image]);
+
   const label = user?.name || user?.email || "Account";
+  const showImage = !!user?.image && !imageFailed;
 
   return (
     <div className="relative" ref={ref}>
@@ -41,9 +52,20 @@ function AccountAvatarMenu() {
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label="Account menu"
-        className="grid h-10 w-10 place-items-center rounded-full bg-primary text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90"
+        className="grid h-10 w-10 place-items-center overflow-hidden rounded-full bg-primary text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90"
       >
-        {initialsFor(user?.name, user?.email)}
+        {showImage ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={user.image}
+            alt=""
+            className="h-full w-full object-cover"
+            referrerPolicy="no-referrer"
+            onError={() => setImageFailed(true)}
+          />
+        ) : (
+          initialsFor(user?.name, user?.email)
+        )}
       </button>
 
       {open && (

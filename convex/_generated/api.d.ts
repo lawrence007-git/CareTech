@@ -10,10 +10,9 @@
 
 import type * as auth from "../auth.js";
 import type * as billing from "../billing.js";
-import type * as crons from "../crons.js";
 import type * as customers from "../customers.js";
 import type * as http from "../http.js";
-import type * as notifications from "../notifications.js";
+import type * as lib_authz from "../lib/authz.js";
 import type * as projects from "../projects.js";
 import type * as reports from "../reports.js";
 import type * as staffs from "../staffs.js";
@@ -29,10 +28,9 @@ import type {
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   billing: typeof billing;
-  crons: typeof crons;
   customers: typeof customers;
   http: typeof http;
-  notifications: typeof notifications;
+  "lib/authz": typeof lib_authz;
   projects: typeof projects;
   reports: typeof reports;
   staffs: typeof staffs;

@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 
 import { AdminShell } from "./_components/AdminShell";
 import { ThemeProvider } from "@/lib/theme";
+import { RouteGuard } from "@/components/custom/RouteGuard";
 
 export const metadata = {
   title: "Mesa Systems — Admin",
@@ -11,7 +12,9 @@ export const metadata = {
 export default function RoutesLayout({ children }: { children: ReactNode }) {
   return (
     <ThemeProvider>
-      <AdminShell>{children}</AdminShell>
+      <AdminShell>
+        <RouteGuard>{children}</RouteGuard>
+      </AdminShell>
     </ThemeProvider>
   );
 }

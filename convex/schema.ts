@@ -6,7 +6,8 @@ export default defineSchema({
   ...authTables,
 
   // Custom users table: starts from Convex Auth's default fields and adds
-  // `role`, populated from the sign-up form (see convex/auth.ts profile()).
+  // `role`, populated from the sign-up form (see convex/auth.ts profile())
+  // or defaulted to "customer" for OAuth sign-ups / account creation.
   users: defineTable({
     name: v.optional(v.string()),
     image: v.optional(v.string()),
@@ -18,8 +19,20 @@ export default defineSchema({
     firstName: v.optional(v.string()),
     lastName: v.optional(v.string()),
     role: v.optional(
-      v.union(v.literal("admin"), v.literal("staff"), v.literal("customer")),
+      v.union(
+        v.literal("admin"),
+        v.literal("manager"),
+        v.literal("staff"),
+        v.literal("customer"),
+      ),
     ),
+    // Additive fields for real Active/Suspended status + last-active
+    // tracking (see lib/types/users.ts's old TODO for the full plan).
+    // Both optional so existing rows (disabled === undefined,
+    // lastActiveAt === undefined) read as "not disabled" / "never signed
+    // in since this shipped" without a migration.
+    disabled: v.optional(v.boolean()),
+    lastActiveAt: v.optional(v.number()), // epoch ms, stamped in convex/auth.ts
   }).index("email", ["email"]),
 
   customers: defineTable({

@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import { requireRole, requireUserId } from "./lib/authz";
 
 const statusValidator = v.union(
   v.literal("Planning"),
@@ -30,6 +31,7 @@ const projectFields = {
 export const list = query({
   args: {},
   handler: async (ctx) => {
+    await requireRole(ctx, ["admin", "manager", "staff"]);
     const docs = await ctx.db.query("projects").order("desc").collect();
     return docs.map((d) => ({ id: d._id, ...d }));
   },
@@ -38,6 +40,7 @@ export const list = query({
 export const get = query({
   args: { id: v.id("projects") },
   handler: async (ctx, { id }) => {
+    await requireRole(ctx, ["admin", "manager", "staff"]);
     const d = await ctx.db.get(id);
     return d ? { id: d._id, ...d } : null;
   },
@@ -45,15 +48,26 @@ export const get = query({
 
 export const create = mutation({
   args: projectFields,
-  handler: async (ctx, args) => await ctx.db.insert("projects", args),
+  handler: async (ctx, args) => {
+    const userId = await requireUserId(ctx);
+    await requireRole(ctx, ["admin", "manager", "staff"]);
+    return await ctx.db.insert("projects", { ...args, createdBy: userId });
+  },
 });
 
 export const update = mutation({
   args: { id: v.id("projects"), ...projectFields },
-  handler: async (ctx, { id, ...fields }) => { await ctx.db.patch(id, fields); },
+  handler: async (ctx, { id, ...fields }) => {
+    await requireRole(ctx, ["admin", "manager", "staff"]);
+    await ctx.db.patch(id, fields);
+  },
 });
 
 export const remove = mutation({
   args: { id: v.id("projects") },
-  handler: async (ctx, { id }) => { await ctx.db.delete(id); },
+  handler: async (ctx, { id }) => {
+    // Deletes are restricted to admins and managers.
+    await requireRole(ctx, ["admin", "manager"]);
+    await ctx.db.delete(id);
+  },
 });

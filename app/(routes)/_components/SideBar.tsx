@@ -4,6 +4,8 @@ import { memo, useMemo } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Logo } from "@/components/custom/CareTechLogo";
+import { useCurrentUser } from "@/hooks/use-current-user";
+import { getAllowedRoles } from "@/lib/types/auth";
 import {
   LayoutDashboard,
   Users,
@@ -11,6 +13,7 @@ import {
   ListChecks,
   Receipt,
   UserCog,
+  ShieldCheck,
   BarChart3,
   LogOut,
   type LucideIcon,
@@ -31,6 +34,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: "/tasks", label: "Tasks", icon: ListChecks },
   { to: "/billing", label: "Billing", icon: Receipt },
   { to: "/staffs", label: "Staff", icon: UserCog },
+  { to: "/users", label: "Users", icon: ShieldCheck },
   { to: "/reports", label: "Reports", icon: BarChart3 },
 ];
 
@@ -52,7 +56,6 @@ const NavLink = memo(function NavLink({
         href={item.to}
         onClick={onNavigate}
         title={collapsed ? item.label : undefined}
-        prefetch={false} // avoid prefetching all 8 routes on mount; opt in if you want it
         className={`group flex items-center gap-3 rounded-lg py-3 text-sm transition-colors ${
           collapsed ? "justify-center px-0" : "px-4"
         } ${
@@ -76,15 +79,21 @@ export const Sidebar = memo(function Sidebar({
   collapsed?: boolean;
 }) {
   const pathname = usePathname() ?? "";
+  const { role } = useCurrentUser();
 
-  // Only recompute active states when pathname or collapsed changes
+  // Only recompute when pathname, collapsed, or role changes. Items whose
+  // route the current role isn't allowed to visit (per ACCESS_RULES) are
+  // dropped entirely — not shown, not disabled, just not there.
   const navWithActive = useMemo(
     () =>
-      NAV_ITEMS.map((item) => ({
+      NAV_ITEMS.filter((item) => {
+        const allowedRoles = getAllowedRoles(item.to);
+        return !allowedRoles || (!!role && allowedRoles.includes(role));
+      }).map((item) => ({
         item,
         active: item.exact ? pathname === item.to : pathname.startsWith(item.to),
       })),
-    [pathname]
+    [pathname, role]
   );
 
   return (
@@ -117,7 +126,7 @@ export const Sidebar = memo(function Sidebar({
 
       <div className="border-t border-border p-4">
         <Link
-          href="/sign-in"
+          href="/signin"
           onClick={onNavigate}
           title={collapsed ? "Sign out" : undefined}
           className={`flex items-center gap-3 rounded-lg py-3 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground ${

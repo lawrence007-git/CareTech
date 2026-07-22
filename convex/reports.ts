@@ -1,4 +1,5 @@
 import { query } from "./_generated/server";
+import { requireRole } from "./lib/authz";
 
 type ReportCategory = "Sales" | "Staff" | "Customer" | "Operations";
 type ReportStatus = "Ready" | "Processing" | "Failed" | "Scheduled";
@@ -44,6 +45,8 @@ const PROJECT_STATUS: Record<string, ReportStatus> = {
 export const list = query({
   args: {},
   handler: async (ctx): Promise<ReportRow[]> => {
+    await requireRole(ctx, ["admin", "manager", "staff"]);
+
     const [billing, staffs, customers, projects] = await Promise.all([
       ctx.db.query("billing").collect(),
       ctx.db.query("staffs").collect(),

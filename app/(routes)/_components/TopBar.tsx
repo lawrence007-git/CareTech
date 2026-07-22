@@ -35,14 +35,6 @@ export function Topbar() {
       <ThemeToggle />
 
       <div className="ml-auto flex items-center gap-2">
-        <button
-          type="button"
-          aria-label="Notifications"
-          className="relative grid h-9 w-9 place-items-center rounded-md border border-border text-muted-foreground hover:bg-accent"
-        >
-          <Bell className="h-4 w-4" />
-          <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-destructive" />
-        </button>
         <UserMenu />
       </div>
     </header>
