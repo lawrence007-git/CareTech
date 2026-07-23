@@ -16,6 +16,7 @@ import {
   ShieldCheck,
   BarChart3,
   LogOut,
+  ClipboardCheck,
   type LucideIcon,
 } from "lucide-react";
 
@@ -29,6 +30,10 @@ type NavItem = {
 // Module-level constant — created once, never recreated on render
 const NAV_ITEMS: NavItem[] = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, exact: true },
+  // Customer-portal-only entries — filtered out for every other role by
+  // the getAllowedRoles(...) check below, same as everything else here.
+  { to: "/portal/projects", label: "My Projects", icon: ClipboardCheck },
+  { to: "/portal/billing", label: "My Billing", icon: Receipt },
   { to: "/customer", label: "Customer", icon: Users },
   { to: "/projects", label: "Projects", icon: FolderKanban },
   { to: "/tasks", label: "Tasks", icon: ListChecks },

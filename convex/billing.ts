@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
-import { requireRole } from "./lib/authz";
+import { requireRole, getMyCustomerRecord } from "./lib/authz";
 
 const statusValidator = v.union(
   v.literal("Paid"), v.literal("Pending"), v.literal("Overdue"), v.literal("Draft")
@@ -21,6 +21,19 @@ export const get = query({
     await requireRole(ctx, ["admin", "manager", "staff"]);
     const d = await ctx.db.get(id);
     return d ? { id: d._id, ...d } : null;
+  },
+});
+
+/** Customer-portal invoice list — only this customer's own billing rows. */
+export const listMine = query({
+  args: {},
+  handler: async (ctx) => {
+    const customer = await getMyCustomerRecord(ctx);
+    if (!customer) return [];
+    const docs = await ctx.db.query("billing").order("desc").collect();
+    return docs
+      .filter((d) => d.customer === customer.name || d.customer === customer.company)
+      .map((d) => ({ id: d._id, ...d }));
   },
 });
 

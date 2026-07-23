@@ -19,6 +19,12 @@ export const ACCESS_RULES: AccessRule[] = [
   { match: "/staffs/edit", roles: ["admin", "manager"] },
   { match: "/staffs", roles: ["admin", "manager"] },
 
+  // Customer portal — separate from the internal /billing, /projects, etc.
+  // routes above, and only ever visible to the "customer" role. More
+  // specific "/portal/x" prefixes aren't needed since nothing else starts
+  // with "/portal".
+  { match: "/portal", roles: ["customer"] },
+
   { match: "/billing", roles: ["admin", "manager"] },
   { match: "/customer", roles: ["admin", "manager"] },
   { match: "/projects", roles: ["admin", "manager", "staff"] },

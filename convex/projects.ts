@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
-import { requireRole, requireUserId } from "./lib/authz";
+import { requireRole, requireUserId, getMyCustomerRecord } from "./lib/authz";
 
 const statusValidator = v.union(
   v.literal("Planning"),
@@ -43,6 +43,36 @@ export const get = query({
     await requireRole(ctx, ["admin", "manager", "staff"]);
     const d = await ctx.db.get(id);
     return d ? { id: d._id, ...d } : null;
+  },
+});
+
+/**
+ * Customer-portal project monitoring — returns only the projects whose
+ * `client` matches the signed-in customer's company (or contact name),
+ * so a customer can watch progress on their own work without ever seeing
+ * the full internal project list.
+ */
+export const listMine = query({
+  args: {},
+  handler: async (ctx) => {
+    const customer = await getMyCustomerRecord(ctx);
+    if (!customer) return [];
+    const docs = await ctx.db.query("projects").order("desc").collect();
+    return docs
+      .filter((d) => d.client === customer.company || d.client === customer.name)
+      .map((d) => ({ id: d._id, ...d }));
+  },
+});
+
+/** Single-project detail for the customer portal, with the same ownership check as listMine. */
+export const getMine = query({
+  args: { id: v.id("projects") },
+  handler: async (ctx, { id }) => {
+    const customer = await getMyCustomerRecord(ctx);
+    if (!customer) return null;
+    const d = await ctx.db.get(id);
+    if (!d || (d.client !== customer.company && d.client !== customer.name)) return null;
+    return { id: d._id, ...d };
   },
 });
 

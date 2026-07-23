@@ -31,3 +31,26 @@ export async function requireRole(ctx: QueryCtx | MutationCtx, roles: Role[]) {
   }
   return user;
 }
+
+/**
+ * Resolves the signed-in "customer"-role user to their row in the
+ * `customers` table (matched by email), for every customer-portal query
+ * that needs to scope data down to "stuff that belongs to me".
+ *
+ * Deliberately returns `null` instead of throwing when no matching
+ * `customers` row exists yet (e.g. an account was created before sales
+ * added the company to the CRM) — the portal should render a friendly
+ * "not linked up yet" empty state instead of crashing, since this is a
+ * data-linkage gap rather than an authorization failure.
+ *
+ * Still requires the "customer" role via requireRole(), so it throws for
+ * anyone who shouldn't be calling customer-portal queries at all.
+ */
+export async function getMyCustomerRecord(ctx: QueryCtx | MutationCtx) {
+  const user = await requireRole(ctx, ["customer"]);
+  if (!user.email) return null;
+  return await ctx.db
+    .query("customers")
+    .withIndex("email", (q) => q.eq("email", user.email!))
+    .unique();
+}

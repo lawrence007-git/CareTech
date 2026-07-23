@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
-import { requireRole } from "./lib/authz";
+import { requireRole, getMyCustomerRecord } from "./lib/authz";
 
 const statusValidator = v.union(
   v.literal("Todo"), v.literal("In Progress"), v.literal("Blocked"), v.literal("Done")
@@ -38,6 +38,30 @@ export const get = query({
     await requireRole(ctx, ["admin", "manager", "staff"]);
     const d = await ctx.db.get(id);
     return d ? { id: d._id, ...d } : null;
+  },
+});
+
+/**
+ * Customer-portal task breakdown for a single project — powers the
+ * "what's actually being worked on" view under project monitoring.
+ * Re-checks that the named project belongs to the signed-in customer
+ * before returning any task rows, so a customer can't probe task data
+ * for a project name that isn't theirs.
+ */
+export const listMineForProject = query({
+  args: { project: v.string() },
+  handler: async (ctx, { project }) => {
+    const customer = await getMyCustomerRecord(ctx);
+    if (!customer) return [];
+
+    const projects = await ctx.db.query("projects").collect();
+    const owns = projects.some(
+      (p) => p.name === project && (p.client === customer.company || p.client === customer.name)
+    );
+    if (!owns) return [];
+
+    const docs = await ctx.db.query("tasks").order("desc").collect();
+    return docs.filter((d) => d.project === project).map((d) => ({ id: d._id, ...d }));
   },
 });
 

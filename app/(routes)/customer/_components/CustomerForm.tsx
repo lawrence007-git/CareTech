@@ -132,7 +132,7 @@ export function CustomerForm({
     email: initial?.email ?? "",
     phone: initial?.phone ?? "",
     plan: initial?.plan ?? "",
-    status: (initial?.status ?? "Prospect") as CustomerStatus,
+    status: (initial?.status ?? "Inactive") as CustomerStatus,
     joined: initial?.joined ?? "",
     lifetimeValue: initial?.lifetimeValue?.replace(/[^0-9.]/g, "") ?? "",
   });

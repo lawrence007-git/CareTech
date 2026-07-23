@@ -44,7 +44,7 @@ export default defineSchema({
     status: v.union(v.literal("Active"), v.literal("Prospect"), v.literal("Inactive"), v.literal("Churned")),
     joined: v.string(),
     lifetimeValue: v.string(),
-  }),
+  }).index("email", ["email"]),
 
   staffs: defineTable({
     name: v.string(),

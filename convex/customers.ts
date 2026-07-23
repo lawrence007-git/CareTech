@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
-import { requireRole } from "./lib/authz";
+import { requireRole, getMyCustomerRecord } from "./lib/authz";
 
 const statusValidator = v.union(
   v.literal("Active"), v.literal("Prospect"), v.literal("Inactive"), v.literal("Churned")
@@ -21,6 +21,18 @@ export const get = query({
     await requireRole(ctx, ["admin", "manager", "staff"]);
     const d = await ctx.db.get(id);
     return d ? { id: d._id, ...d } : null;
+  },
+});
+
+/**
+ * Customer-portal self lookup — returns the company/plan record linked to
+ * the signed-in customer's email, or null if no such link exists yet.
+ */
+export const me = query({
+  args: {},
+  handler: async (ctx) => {
+    const record = await getMyCustomerRecord(ctx);
+    return record ? { id: record._id, ...record } : null;
   },
 });
 
