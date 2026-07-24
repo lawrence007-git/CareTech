@@ -1,7 +1,10 @@
 "use client";
 
-import { X, BadgeCheck, ShieldOff } from "lucide-react";
+import { X, BadgeCheck, ShieldOff, History } from "lucide-react";
 import type { ReactNode } from "react";
+import { useQuery } from "convex/react";
+import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
 import {
   USER_ROLE_CLASS,
   USER_STATUS_CLASS,
@@ -19,6 +22,10 @@ interface UserDetailsSheetProps {
 }
 
 export function UserDetailsSheet({ user, open, onClose }: UserDetailsSheetProps) {
+  // "skip" when the sheet is closed or no user is selected, rather than
+  // firing a query for an id that's about to be thrown away.
+  const auditLog = useQuery(api.users.auditLogForUser, user && open ? { id: user.id as Id<"users"> } : "skip");
+
   if (!open || !user) return null;
 
   const status = userStatus(user);
@@ -75,6 +82,34 @@ export function UserDetailsSheet({ user, open, onClose }: UserDetailsSheetProps)
           />
           <Row label="Joined" value={formatJoined(user.joined)} />
           <Row label="Last active" value={formatLastActive(user.lastActiveAt)} />
+
+          <div className="border-t border-border pt-4">
+            <p className="mb-2 flex items-center gap-1.5 text-xs uppercase tracking-wider text-muted-foreground">
+              <History className="h-3.5 w-3.5" /> Role &amp; suspension history
+            </p>
+            {auditLog === undefined ? (
+              <p className="text-xs text-muted-foreground">Loading…</p>
+            ) : auditLog.length === 0 ? (
+              <p className="text-xs text-muted-foreground">No changes recorded yet.</p>
+            ) : (
+              <ul className="space-y-2">
+                {auditLog.map((entry) => (
+                  <li key={entry.id} className="rounded-md border border-border bg-surface/60 px-3 py-2 text-xs">
+                    <p className="text-foreground">
+                      {entry.action === "role_change" && (
+                        <>Role changed from <span className="font-medium">{entry.fromValue}</span> to <span className="font-medium">{entry.toValue}</span></>
+                      )}
+                      {entry.action === "suspend" && <>Account suspended</>}
+                      {entry.action === "reactivate" && <>Account reactivated</>}
+                    </p>
+                    <p className="mt-1 text-muted-foreground">
+                      by {entry.actorName} · {new Date(entry.at).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" })}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </div>
       </aside>
     </div>

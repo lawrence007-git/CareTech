@@ -78,6 +78,34 @@ export const get = query({
   },
 });
 
+function displayName(u: Doc<"users">) {
+  return u.name?.trim() || [u.firstName, u.lastName].filter(Boolean).join(" ") || u.email || "Unnamed user";
+}
+
+/** Admin-only audit trail for one user — every role change and suspend/reactivate action taken against them. */
+export const auditLogForUser = query({
+  args: { id: v.id("users") },
+  handler: async (ctx, { id }) => {
+    await requireRole(ctx, ["admin"]);
+    const rows = await ctx.db
+      .query("auditLogs")
+      .withIndex("targetUserId", (q) => q.eq("targetUserId", id))
+      .order("desc")
+      .collect();
+    return rows.map((r) => ({ id: r._id, ...r, at: new Date(r._creationTime).toISOString() }));
+  },
+});
+
+/** Admin-only audit trail across everyone — most recent role/suspension changes system-wide. */
+export const auditLogRecent = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireRole(ctx, ["admin"]);
+    const rows = await ctx.db.query("auditLogs").order("desc").take(200);
+    return rows.map((r) => ({ id: r._id, ...r, at: new Date(r._creationTime).toISOString() }));
+  },
+});
+
 /**
  * Changes another user's role. Deliberately separate from `updateProfile`
  * above — that one is self-service and only touches your own name;
@@ -96,7 +124,22 @@ export const updateRole = mutation({
       throw new Error("You can't remove your own admin role.");
     }
 
+    const target = await ctx.db.get(id);
+    const fromRole = target?.role ?? "customer";
+
     await ctx.db.patch(id, { role });
+
+    if (fromRole !== role) {
+      await ctx.db.insert("auditLogs", {
+        actorId: actingUser._id,
+        actorName: displayName(actingUser),
+        action: "role_change",
+        targetUserId: id,
+        targetName: target ? displayName(target) : "Unknown user",
+        fromValue: fromRole,
+        toValue: role,
+      });
+    }
   },
 });
 
@@ -124,23 +167,21 @@ export const setDisabled = mutation({
       throw new Error("You can't disable your own account.");
     }
 
+    const target = await ctx.db.get(id);
+    const wasDisabled = !!target?.disabled;
+
     await ctx.db.patch(id, { disabled });
+
+    if (wasDisabled !== disabled) {
+      await ctx.db.insert("auditLogs", {
+        actorId: actingUser._id,
+        actorName: displayName(actingUser),
+        action: disabled ? "suspend" : "reactivate",
+        targetUserId: id,
+        targetName: target ? displayName(target) : "Unknown user",
+        fromValue: wasDisabled ? "disabled" : "active",
+        toValue: disabled ? "disabled" : "active",
+      });
+    }
   },
 });
-
-// No `create` or `remove` here on purpose:
-//
-// - CREATE: this table is owned by Convex Auth. A row inserted directly
-//   here has no linked authAccounts credential, so it couldn't actually
-//   sign in — it would just be a dead record that looks like a user.
-//   Account creation belongs in the sign-up flow (convex/auth.ts), not an
-//   admin form. Admin-initiated account creation would really be an
-//   "invite" feature (generate a token, email a signup link) — a
-//   meaningfully bigger feature than a form; happy to help separately.
-//
-// - REMOVE: hard-deleting a `users` row can orphan its authAccounts /
-//   authSessions rows (owned by @convex-dev/auth, not shown in schema.ts).
-//   `setDisabled` (above) is now the real way to revoke access without
-//   that risk — demoting someone's role to "customer" only reduces what
-//   they can do once signed in, but setDisabled actually blocks sign-in
-//   itself.

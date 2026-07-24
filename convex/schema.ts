@@ -4,10 +4,6 @@ import { authTables } from "@convex-dev/auth/server";
 
 export default defineSchema({
   ...authTables,
-
-  // Custom users table: starts from Convex Auth's default fields and adds
-  // `role`, populated from the sign-up form (see convex/auth.ts profile())
-  // or defaulted to "customer" for OAuth sign-ups / account creation.
   users: defineTable({
     name: v.optional(v.string()),
     image: v.optional(v.string()),
@@ -26,13 +22,8 @@ export default defineSchema({
         v.literal("customer"),
       ),
     ),
-    // Additive fields for real Active/Suspended status + last-active
-    // tracking (see lib/types/users.ts's old TODO for the full plan).
-    // Both optional so existing rows (disabled === undefined,
-    // lastActiveAt === undefined) read as "not disabled" / "never signed
-    // in since this shipped" without a migration.
     disabled: v.optional(v.boolean()),
-    lastActiveAt: v.optional(v.number()), // epoch ms, stamped in convex/auth.ts
+    lastActiveAt: v.optional(v.number()), 
   }).index("email", ["email"]),
 
   customers: defineTable({
@@ -56,11 +47,6 @@ export default defineSchema({
   projects: defineTable({
     name: v.string(),
     client: v.string(),
-    // Real FK to customers, set whenever the client is picked from the
-    // dropdown. `client` stays as a denormalized display string (kept in
-    // sync on write) so existing UI/reports don't need a rewrite, but
-    // ownership checks (getMyCustomerRecord) now prefer this ID over the
-    // string match wherever it's present.
     customerId: v.optional(v.id("customers")),
     owner: v.string(),
     team: v.array(v.string()),
@@ -80,8 +66,6 @@ export default defineSchema({
     title: v.string(),
     description: v.string(),
     project: v.string(),
-    // Real FK, set when the project is picked from the dropdown. `project`
-    // stays as a denormalized display string for existing UI/reports.
     projectId: v.optional(v.id("projects")),
     assignee: v.string(),
     assigneeInitials: v.string(),
@@ -97,13 +81,21 @@ export default defineSchema({
 
   billing: defineTable({
     customer: v.string(),
-    // Real FK, set when the customer is picked from the dropdown. `customer`
-    // stays as a denormalized display string for existing UI/reports.
     customerId: v.optional(v.id("customers")),
     amount: v.string(),
     status: v.union(v.literal("Paid"), v.literal("Pending"), v.literal("Overdue"), v.literal("Draft")),
     issued: v.string(),
     due: v.string(),
   }).index("customerId", ["customerId"]),
-
+  auditLogs: defineTable({
+    actorId: v.id("users"),
+    actorName: v.string(), // snapshot of the acting admin's name/email at the time, so the entry still reads sensibly if that admin is later renamed
+    action: v.union(v.literal("role_change"), v.literal("suspend"), v.literal("reactivate")),
+    targetUserId: v.id("users"),
+    targetName: v.string(), // same snapshot reasoning as actorName
+    fromValue: v.optional(v.string()),
+    toValue: v.optional(v.string()),
+  })
+    .index("targetUserId", ["targetUserId"])
+    .index("actorId", ["actorId"]),
 });

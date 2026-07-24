@@ -83,21 +83,6 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
     //    password *they* chose to *your* existing account. Instead we
     //    reject the sign-up and point them at signing in / using Google.
     async createOrUpdateUser(ctx: MutationCtx, args) {
-      // DIAGNOSTIC LOGGING: this function was silently producing empty/
-      // missing users for Google sign-ins with no visible error anywhere.
-      // Logging every call here means the Convex Logs tab will show
-      // something on EVERY attempt from now on — even a successful one —
-      // so it's finally possible to see what Google actually sent, instead
-      // of guessing. Safe to leave in; it doesn't log secrets, only the
-      // shape of what arrived. Remove once Google sign-in is confirmed
-      // working end-to-end.
-      console.log("[auth] createOrUpdateUser called", {
-        type: args.type,
-        existingUserId: args.existingUserId ?? null,
-        profileKeys: Object.keys(args.profile ?? {}),
-        email: (args.profile as { email?: string } | undefined)?.email ?? null,
-      });
-
       // Already resolved to a known user (e.g. an ordinary repeat sign-in
       // with correct password, or an already-linked Google account).
       //
@@ -119,17 +104,8 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
           // branch, which makes it the one correct chokepoint to actually
           // block a disabled account, rather than just hiding the row in
           // the admin UI. `disabled` is admin-set via users.setDisabled —
-          // see convex/users.ts.
-          //
-          // UNVERIFIED ASSUMPTION, TEST BEFORE TRUSTING: this relies on
-          // @convex-dev/auth treating a throw from createOrUpdateUser as
-          // fatal to the whole sign-in mutation (no session issued), since
-          // this callback runs inside the same mutation that would
-          // otherwise create one. If that assumption is wrong and the
-          // library swallows this error instead, a disabled account could
-          // still end up signed in. Confirm by disabling a test account
-          // and attempting to sign in with it end-to-end before relying on
-          // this in production.
+          // see convex/users.ts. Confirmed end-to-end: disabling a test
+          // account and attempting to sign in with it correctly refuses.
           if (existingDoc.disabled) {
             throw new ConvexError("This account has been disabled. Contact an admin for access.");
           }
@@ -142,10 +118,6 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
 
           return args.existingUserId;
         }
-        console.log(
-          "[auth] existingUserId was stale (no such user document) — falling through to email lookup/creation",
-          { staleUserId: args.existingUserId },
-        );
         // Fall through to the normal email-based lookup/creation logic
         // below, instead of returning an ID that points at nothing.
       }
