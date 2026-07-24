@@ -17,12 +17,17 @@ import {
   MinusCircle,
   XCircle,
 } from "lucide-react";
-import { FormField, TextInput } from "../../_components/FormField";
+import { FormField, TextInput, Select } from "../../_components/FormField";
 import { FormActions } from "../../_components/FormShell";
 import type { Customer, CustomerStatus } from "@/lib/types/customers";
 import { validatePersonName, validateRealisticName, validateEmail, validatePhone, validateNotFutureDate, validateNumber, normalizeText, type Errors } from "@/lib/validation";
 
 const STATUSES: CustomerStatus[] = ["Active", "Prospect", "Inactive", "Churned"];
+
+// Fixed pricing tiers — was a free-text field, which let "Pro", "pro",
+// "PRO", and "Professional" all exist for the same tier and made plan-based
+// filtering/reporting unreliable.
+const PLANS = ["Entry", "Pro", "Enterprise"] as const;
 
 const STATUS_META: Record<
   CustomerStatus,
@@ -250,12 +255,19 @@ export function CustomerForm({
           />
         </FormField>
         <FormField label="Plan" htmlFor="plan" icon={Tag}>
-          <TextInput
-            id="plan"
-            value={form.plan}
-            onChange={(e) => set("plan", e.target.value)}
-            placeholder="Pro"
-          />
+          <Select id="plan" required value={form.plan} onChange={(e) => set("plan", e.target.value)}>
+            <option value="" disabled>
+              Select a plan…
+            </option>
+            {form.plan && !PLANS.includes(form.plan as (typeof PLANS)[number]) && (
+              <option value={form.plan}>{form.plan} (legacy value)</option>
+            )}
+            {PLANS.map((p) => (
+              <option key={p} value={p}>
+                {p}
+              </option>
+            ))}
+          </Select>
         </FormField>
 
         <FormField label="Email" htmlFor="email" icon={Mail} error={errors.email}>

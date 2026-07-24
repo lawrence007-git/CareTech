@@ -15,7 +15,7 @@ import {
   CheckCircle2,
   Clock,
 } from "lucide-react";
-import { FormField, TextInput } from "../../_components/FormField";
+import { FormField, TextInput, Select } from "../../_components/FormField";
 import { FormActions } from "../../_components/FormShell";
 import {
   TASK_STATUS_CLASS,
@@ -30,7 +30,7 @@ import {
   type TaskStatus,
   type TaskPriority,
 } from "@/lib/types/tasks";
-import { useMutation } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { validatePersonName, validateRealisticName, validateRealisticDate, validateOptionalNumber, validateOptionalInteger, validateList, splitList, normalizeText, type Errors } from "@/lib/validation";
@@ -49,6 +49,7 @@ type FormValues = {
   title: string;
   description: string;
   project: string;
+  projectId: string; // Id<"projects"> once a real project is picked, "" if unset/legacy.
   assignee: string;
   status: TaskStatus;
   priority: TaskPriority;
@@ -62,10 +63,10 @@ type FormValues = {
 
 function validate(values: FormValues): Errors<FieldName> {
   const errors: Errors<FieldName> = {
-    // Titles and project names can legitimately include digits ("Q3
-    // Launch", "Fix bug #42"), so only block values with no letters at all.
+    // Titles can legitimately include digits ("Fix bug #42"), so only
+    // block values with no letters at all.
     title: validateRealisticName(values.title, "Title") ?? undefined,
-    project: validateRealisticName(values.project, "Project") ?? undefined,
+    project: values.project.trim() ? undefined : "Project is required.",
     // Assignee is a person — reject digits/symbols masquerading as a name,
     // since this renders as avatar initials elsewhere.
     assignee: validatePersonName(values.assignee, "Assignee") ?? undefined,
@@ -107,6 +108,12 @@ export function TaskForm({
   const router = useRouter();
   const createTask = useMutation(api.tasks.create);
   const updateTask = useMutation(api.tasks.update);
+  // Picking from real records instead of free-typing: a mistyped project
+  // name here would silently orphan the task (it just wouldn't show up
+  // under that project anywhere), and a mistyped assignee breaks the
+  // avatar-initials lookup used across the board/list views.
+  const projects = useQuery(api.projects.list);
+  const staffs = useQuery(api.staffs.list);
   const [pending, setPending] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [errors, setErrors] = useState<Errors<FieldName>>({});
@@ -117,6 +124,7 @@ export function TaskForm({
     title: initial?.title ?? "",
     description: initial?.description ?? "",
     project: initial?.project ?? "",
+    projectId: initial?.projectId ?? "",
     assignee: initial?.assignee ?? "",
     status: (initial?.status ?? "Todo") as TaskStatus,
     priority: (initial?.priority ?? "Medium") as TaskPriority,
@@ -128,8 +136,32 @@ export function TaskForm({
     comments: initial?.comments ?? 0,
   });
 
+  // A new task shouldn't default to a Completed/Cancelled project (nothing
+  // should still be landing there) or a non-Active assignee. Still allow
+  // whatever's already saved on this record (edit mode) to stay selected
+  // even if it's since moved out of the "normally pickable" set.
+  const OPEN_PROJECT_STATUSES = ["Planning", "In Progress", "On Hold"];
+  const projectOptions = useMemo(
+    () => projects?.filter((p) => OPEN_PROJECT_STATUSES.includes(p.status) || p.name === form.project),
+    [projects, form.project],
+  );
+  const assigneeOptions = useMemo(
+    () => staffs?.filter((s) => s.status === "Active" || s.name === form.assignee),
+    [staffs, form.assignee],
+  );
+
   const set = <K extends keyof FormValues>(k: K, v: FormValues[K]) => {
     const next = { ...form, [k]: v };
+    setForm(next);
+    if (submitted) setErrors(validate(next));
+  };
+
+  // Project is a linked pair: picking one sets the display string (project)
+  // and the real FK (projectId) together.
+  const setProject = (projectId: string) => {
+    if (projectId === "__legacy__") return; // keep the existing unlinked project string as-is
+    const name = projects?.find((p) => p.id === projectId)?.name ?? "";
+    const next = { ...form, project: name, projectId };
     setForm(next);
     if (submitted) setErrors(validate(next));
   };
@@ -157,6 +189,7 @@ export function TaskForm({
       title: normalizeText(form.title),
       description: form.description.trim(),
       project: normalizeText(form.project),
+      projectId: projects?.some((p) => p.id === form.projectId) ? (form.projectId as Id<"projects">) : undefined,
       assignee: normalizeText(form.assignee),
       assigneeInitials: taskInitials(form.assignee),
       status: isEditing ? form.status : ("Todo" as TaskStatus),
@@ -272,24 +305,31 @@ export function TaskForm({
         </FormField>
 
         <FormField label="Project" htmlFor="project" icon={FolderKanban} error={errors.project}>
-          <TextInput
-            id="project"
-            required
-            aria-invalid={!!errors.project}
-            value={form.project}
-            onChange={(e) => set("project", e.target.value)}
-            placeholder="Website relaunch"
-          />
+          <Select id="project" required aria-invalid={!!errors.project} value={form.projectId} onChange={(e) => setProject(e.target.value)} disabled={!projects}>
+            <option value="" disabled>{projects ? "Select a project…" : "Loading projects…"}</option>
+            {!form.projectId && form.project && <option value="__legacy__">{form.project} (legacy, not linked)</option>}
+            {projectOptions?.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}{!OPEN_PROJECT_STATUSES.includes(p.status) ? ` (${p.status})` : ""}
+              </option>
+            ))}
+          </Select>
         </FormField>
         <FormField label="Assignee" htmlFor="assignee" icon={User} error={errors.assignee}>
-          <TextInput
-            id="assignee"
-            required
-            aria-invalid={!!errors.assignee}
-            value={form.assignee}
-            onChange={(e) => set("assignee", e.target.value)}
-            placeholder="Jane Cooper"
-          />
+          <Select id="assignee" required aria-invalid={!!errors.assignee} value={form.assignee} onChange={(e) => set("assignee", e.target.value)} disabled={!staffs}>
+            <option value="" disabled>
+              {staffs ? "Select an assignee…" : "Loading staff…"}
+            </option>
+            {form.assignee && staffs && !staffs.some((s) => s.name === form.assignee) && (
+              <option value={form.assignee}>{form.assignee} (not on staff list)</option>
+            )}
+            {assigneeOptions?.map((s) => (
+              <option key={s.id} value={s.name}>
+                {s.name}
+                {s.status !== "Active" ? ` (${s.status})` : ""}
+              </option>
+            ))}
+          </Select>
         </FormField>
 
         {isEditing && (

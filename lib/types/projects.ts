@@ -7,6 +7,7 @@ export interface Project {
   client: string;
   owner: string;
   team: string[];
+  customerId?: string;  
   tags: string[];
   status: ProjectStatus;
   priority: ProjectPriority;

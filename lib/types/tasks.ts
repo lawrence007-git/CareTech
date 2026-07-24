@@ -6,6 +6,7 @@ export interface Task {
   title: string;
   description: string;
   project: string;
+  projectId?: string;
   assignee: string;
   assigneeInitials: string;
   tags: string[];

@@ -18,7 +18,7 @@ import {
   ArrowRight,
   ArrowUp,
 } from "lucide-react";
-import { FormField, TextInput } from "../../_components/FormField";
+import { FormField, TextInput, Select } from "../../_components/FormField";
 import { FormActions } from "../../_components/FormShell";
 import {
   PROJECT_STATUS_CLASS,
@@ -29,7 +29,7 @@ import {
   type ProjectStatus,
   type ProjectPriority,
 } from "@/lib/types/projects";
-import { useMutation } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { validatePersonName, validateRealisticName, validateRealisticDate, validateNumber, validateOptionalInteger, validateList, validateInitialsList, splitList, normalizeText, type Errors } from "@/lib/validation";
@@ -85,6 +85,7 @@ type FieldName = "name" | "client" | "owner" | "due" | "budget" | "spent" | "tas
 type FormValues = {
   name: string;
   client: string;
+  customerId: string; // Id<"customers"> once a real customer is picked, "" if unset/legacy.
   owner: string;
   status: ProjectStatus;
   priority: ProjectPriority;
@@ -99,32 +100,19 @@ type FormValues = {
 
 function validate(values: FormValues): Errors<FieldName> {
   const errors: Errors<FieldName> = {
-    // Project names and clients can legitimately include digits ("Q3
-    // Launch", "3M"), so only block values with no letters at all.
     name: validateRealisticName(values.name, "Project name") ?? undefined,
-    client: validateRealisticName(values.client, "Client") ?? undefined,
-    // Owner is a person — reject digits/symbols masquerading as a name,
-    // since this renders as avatar initials elsewhere.
-    owner: validatePersonName(values.owner, "Owner") ?? undefined,
-    // Project spotlight and the agenda timeline both compute "days until
-    // due" off this — a typo'd year produces a nonsensical countdown there.
+    client: values.client.trim() ? undefined : "Client is required.",
+    owner: validatePersonName(values.owner, "Team leader") ?? undefined,
     due: validateRealisticDate(values.due, "Due date", { maxYearsAhead: 3 }) ?? undefined,
-    // Capped well under the shared default — an uncapped project budget
-    // could otherwise dominate any dashboard total it's summed into.
     budget: validateNumber(values.budget, "Budget", { allowZero: false, max: 25_000_000 }) ?? undefined,
     spent: values.spent.trim() ? validateNumber(values.spent, "Spent", { max: 25_000_000 }) ?? undefined : undefined,
-    // Capped — a project with thousands of tasks is almost certainly a typo,
-    // and it would otherwise make the tasks-done/total ratio meaningless.
     tasksDone: validateOptionalInteger(values.tasksDone, "Tasks done", { max: 2_000 }) ?? undefined,
     tasksTotal: validateOptionalInteger(values.tasksTotal, "Tasks total", { max: 2_000 }) ?? undefined,
     tags: validateList(values.tags, "Tag") ?? undefined,
-    // Team entries render inside small circular avatars as initials — a
-    // full name pasted in here would visibly overflow the badge, so this
-    // is checked for shape, not just presence.
     team: validateInitialsList(values.team, "Team") ?? undefined,
   };
 
-  // Cross-field integrity checks — only run once the individual fields are themselves valid numbers.
+  // Cross-field checks, only once the individual numbers are valid.
   if (!errors.budget && !errors.spent) {
     const budget = Number.parseFloat(values.budget);
     const spent = Number.parseFloat(values.spent || "0");
@@ -153,6 +141,8 @@ export function ProjectForm({
   const router = useRouter();
   const createProject = useMutation(api.projects.create);
   const updateProject = useMutation(api.projects.update);
+  const customers = useQuery(api.customers.list);
+  const staffs = useQuery(api.staffs.list);
   const [pending, setPending] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [errors, setErrors] = useState<Errors<FieldName>>({});
@@ -162,6 +152,7 @@ export function ProjectForm({
   const [form, setForm] = useState<FormValues>({
     name: initial?.name ?? "",
     client: initial?.client ?? "",
+    customerId: initial?.customerId ?? "",
     owner: initial?.owner ?? "",
     status: (initial?.status ?? "Planning") as ProjectStatus,
     priority: (initial?.priority ?? "Medium") as ProjectPriority,
@@ -174,8 +165,30 @@ export function ProjectForm({
     team: initial?.team?.join(", ") ?? "",
   });
 
+  // New projects only offer Active/Prospect customers as a client, and only
+  // Active staff as team leader; an already-saved value stays selectable
+  // even if its status has since drifted.
+  const clientOptions = useMemo(
+    () => customers?.filter((c) => c.status === "Active" || c.status === "Prospect" || c.company === form.client),
+    [customers, form.client],
+  );
+  const leaderOptions = useMemo(
+    () => staffs?.filter((s) => s.status === "Active" || s.name === form.owner),
+    [staffs, form.owner],
+  );
+
   const set = <K extends keyof FormValues>(k: K, v: FormValues[K]) => {
     const next = { ...form, [k]: v };
+    setForm(next);
+    if (submitted) setErrors(validate(next));
+  };
+
+  // Client is a linked pair: picking a customer sets the display string
+  // (client) and the real FK (customerId) together, so they can't drift apart.
+  const setClient = (customerId: string) => {
+    if (customerId === "__legacy__") return; // keep the existing unlinked client string as-is
+    const company = customers?.find((c) => c.id === customerId)?.company ?? "";
+    const next = { ...form, client: company, customerId };
     setForm(next);
     if (submitted) setErrors(validate(next));
   };
@@ -207,6 +220,7 @@ export function ProjectForm({
     const payload = {
       name: normalizeText(form.name),
       client: normalizeText(form.client),
+      customerId: customers?.some((c) => c.id === form.customerId) ? (form.customerId as Id<"customers">) : undefined,
       owner: normalizeText(form.owner),
       status: isEditing ? form.status : ("Planning" as ProjectStatus),
       priority: form.priority,
@@ -332,12 +346,34 @@ export function ProjectForm({
           <TextInput id="name" required aria-invalid={!!errors.name} value={form.name} onChange={(e) => set("name", e.target.value)} placeholder="Website relaunch" />
         </FormField>
 
-        <FormField label="Client" htmlFor="client" icon={Building2} error={errors.client}>
-          <TextInput id="client" required aria-invalid={!!errors.client} value={form.client} onChange={(e) => set("client", e.target.value)} placeholder="Acme Corp" />
+        <FormField
+          label="Client"
+          htmlFor="client"
+          icon={Building2}
+          error={errors.client}
+          hint={!errors.client && customers?.length === 0 ? "No customers on file yet — add one first." : undefined}
+        >
+          <Select id="client" required aria-invalid={!!errors.client} value={form.customerId} onChange={(e) => setClient(e.target.value)} disabled={!customers}>
+            <option value="" disabled>{customers ? "Select a customer…" : "Loading customers…"}</option>
+            {!form.customerId && form.client && <option value="__legacy__">{form.client} (legacy, not linked)</option>}
+            {clientOptions?.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.company}{c.status !== "Active" && c.status !== "Prospect" ? ` (${c.status})` : ""}
+              </option>
+            ))}
+          </Select>
         </FormField>
 
-        <FormField label="Owner" htmlFor="owner" icon={User} error={errors.owner}>
-          <TextInput id="owner" required aria-invalid={!!errors.owner} value={form.owner} onChange={(e) => set("owner", e.target.value)} placeholder="Jane Cooper" />
+        <FormField label="Team Leader" htmlFor="owner" icon={User} error={errors.owner}>
+          <Select id="owner" required aria-invalid={!!errors.owner} value={form.owner} onChange={(e) => set("owner", e.target.value)} disabled={!staffs}>
+            <option value="" disabled>{staffs ? "Select a team leader…" : "Loading staff…"}</option>
+            {form.owner && staffs && !staffs.some((s) => s.name === form.owner) && <option value={form.owner}>{form.owner} (not on staff list)</option>}
+            {leaderOptions?.map((s) => (
+              <option key={s.id} value={s.name}>
+                {s.name}{s.status !== "Active" ? ` (${s.status})` : ""}
+              </option>
+            ))}
+          </Select>
         </FormField>
 
         {isEditing && (

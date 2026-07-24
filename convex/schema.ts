@@ -56,6 +56,12 @@ export default defineSchema({
   projects: defineTable({
     name: v.string(),
     client: v.string(),
+    // Real FK to customers, set whenever the client is picked from the
+    // dropdown. `client` stays as a denormalized display string (kept in
+    // sync on write) so existing UI/reports don't need a rewrite, but
+    // ownership checks (getMyCustomerRecord) now prefer this ID over the
+    // string match wherever it's present.
+    customerId: v.optional(v.id("customers")),
     owner: v.string(),
     team: v.array(v.string()),
     tags: v.array(v.string()),
@@ -67,15 +73,16 @@ export default defineSchema({
     tasksTotal: v.number(),
     tasksDone: v.number(),
     due: v.string(),
-    // Added for Convex Auth: stamped with the signed-in user on create().
-    // Optional so it doesn't break any projects that already exist without it.
     createdBy: v.optional(v.id("users")),
-  }),
+  }).index("customerId", ["customerId"]),
 
   tasks: defineTable({
     title: v.string(),
     description: v.string(),
     project: v.string(),
+    // Real FK, set when the project is picked from the dropdown. `project`
+    // stays as a denormalized display string for existing UI/reports.
+    projectId: v.optional(v.id("projects")),
     assignee: v.string(),
     assigneeInitials: v.string(),
     tags: v.array(v.string()),
@@ -86,20 +93,17 @@ export default defineSchema({
     subtasksTotal: v.number(),
     subtasksDone: v.number(),
     comments: v.number(),
-  }),
+  }).index("projectId", ["projectId"]),
 
   billing: defineTable({
     customer: v.string(),
+    // Real FK, set when the customer is picked from the dropdown. `customer`
+    // stays as a denormalized display string for existing UI/reports.
+    customerId: v.optional(v.id("customers")),
     amount: v.string(),
     status: v.union(v.literal("Paid"), v.literal("Pending"), v.literal("Overdue"), v.literal("Draft")),
     issued: v.string(),
     due: v.string(),
-  }),
+  }).index("customerId", ["customerId"]),
 
-  notifications: defineTable({
-    title: v.string(),
-    message: v.string(),
-    category: v.optional(v.union(v.literal("Sales"), v.literal("Staff"), v.literal("Customer"), v.literal("Operations"))),
-    read: v.boolean(),
-  }),
 });

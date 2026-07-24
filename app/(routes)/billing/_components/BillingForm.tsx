@@ -11,13 +11,13 @@ import {
   CheckCircle2,
   AlertCircle,
 } from "lucide-react";
-import { FormField, TextInput } from "../../_components/FormField";
+import { FormField, TextInput, Select } from "../../_components/FormField";
 import { FormActions } from "../../_components/FormShell";
 import { INVOICE_STATUS_CLASS, type Invoice, type InvoiceStatus } from "@/lib/types/billing";
-import { useMutation } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import { validateRealisticName, validateNumber, validateRealisticDate, validateDateOrder, normalizeText, type Errors } from "@/lib/validation";
+import { validateNumber, validateRealisticDate, validateDateOrder, normalizeText, type Errors } from "@/lib/validation";
 
 const STATUSES: InvoiceStatus[] = ["Draft", "Pending", "Paid", "Overdue"];
 
@@ -33,6 +33,7 @@ const currency = new Intl.NumberFormat("en-US", { style: "currency", currency: "
 type FieldName = "customer" | "amount" | "issued" | "due";
 type FormValues = {
   customer: string;
+  customerId: string; // Id<"customers"> once a real customer is picked, "" if unset/legacy.
   amount: string;
   status: InvoiceStatus;
   issued: string;
@@ -41,11 +42,7 @@ type FormValues = {
 
 function validate(values: FormValues): Errors<FieldName> {
   return {
-    // Catches junk like "a", "x", or "12345" that would show up as-is in
-    // the Reports/Dashboard activity feed and revenue breakdowns. Uses the
-    // looser org-style check since an invoice "customer" here may be a
-    // company name ("Acme Corp") rather than strictly a person.
-    customer: validateRealisticName(values.customer, "Customer") ?? undefined,
+    customer: values.customer.trim() ? undefined : "Customer is required.",
     // Capped well below the default ceiling — a single invoice north of $1M
     // is almost always a typo, and an uncapped value would blow out the
     // revenue chart's Y-axis scale for every other month.
@@ -97,6 +94,10 @@ export function BillingForm({
   const router = useRouter();
   const createInvoice = useMutation(api.billing.create);
   const updateInvoice = useMutation(api.billing.update);
+  // Same reasoning as the project client picker: a hand-typed customer name
+  // that doesn't exactly match the customers table means this invoice never
+  // shows up in that customer's portal (billing.listMine matches by string).
+  const customers = useQuery(api.customers.list);
   const [pending, setPending] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [errors, setErrors] = useState<Errors<FieldName>>({});
@@ -105,14 +106,33 @@ export function BillingForm({
 
   const [form, setForm] = useState<FormValues>({
     customer: initial?.customer ?? "",
+    customerId: initial?.customerId ?? "",
     amount: initial?.amount?.replace(/[^0-9.]/g, "") ?? "",
     status: (initial?.status ?? "Draft") as InvoiceStatus,
     issued: initial?.issued ?? "",
     due: initial?.due ?? "",
   });
 
+  // A new invoice shouldn't default to billing a Prospect (not yet a paying
+  // customer) or an Inactive/Churned account. Still allow whatever's already
+  // saved on this invoice (edit mode) to stay selected either way.
+  const customerOptions = useMemo(
+    () => customers?.filter((c) => c.status === "Active" || c.company === form.customer),
+    [customers, form.customer],
+  );
+
   const set = <K extends keyof FormValues>(k: K, v: FormValues[K]) => {
     const next = { ...form, [k]: v };
+    setForm(next);
+    if (submitted) setErrors(validate(next));
+  };
+
+  // Customer is a linked pair: picking one sets the display string
+  // (customer) and the real FK (customerId) together.
+  const setCustomer = (customerId: string) => {
+    if (customerId === "__legacy__") return; // keep the existing unlinked customer string as-is
+    const company = customers?.find((c) => c.id === customerId)?.company ?? "";
+    const next = { ...form, customer: company, customerId };
     setForm(next);
     if (submitted) setErrors(validate(next));
   };
@@ -132,6 +152,7 @@ export function BillingForm({
     setPending(true);
     const payload = {
       customer: normalizeText(form.customer),
+      customerId: customers?.some((c) => c.id === form.customerId) ? (form.customerId as Id<"customers">) : undefined,
       amount: formattedAmount,
       // New invoices always start as Draft; status only becomes editable
       // once the record exists.
@@ -186,14 +207,15 @@ export function BillingForm({
       </div>
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
         <FormField label="Customer" htmlFor="customer" icon={Building2} className="sm:col-span-2" error={errors.customer}>
-          <TextInput
-            id="customer"
-            required
-            aria-invalid={!!errors.customer}
-            value={form.customer}
-            onChange={(e) => set("customer", e.target.value)}
-            placeholder="Acme Corp"
-          />
+          <Select id="customer" required aria-invalid={!!errors.customer} value={form.customerId} onChange={(e) => setCustomer(e.target.value)} disabled={!customers}>
+            <option value="" disabled>{customers ? "Select a customer…" : "Loading customers…"}</option>
+            {!form.customerId && form.customer && <option value="__legacy__">{form.customer} (legacy, not linked)</option>}
+            {customerOptions?.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.company}{c.status !== "Active" ? ` (${c.status})` : ""}
+              </option>
+            ))}
+          </Select>
         </FormField>
 
         <FormField label="Amount (USD)" htmlFor="amount" icon={DollarSign} error={errors.amount}>

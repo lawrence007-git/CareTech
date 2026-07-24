@@ -2,9 +2,16 @@ import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { requireRole, getMyCustomerRecord } from "./lib/authz";
 
-const statusValidator = v.union(
-  v.literal("Paid"), v.literal("Pending"), v.literal("Overdue"), v.literal("Draft")
-);
+const statusValidator = v.union(v.literal("Paid"), v.literal("Pending"), v.literal("Overdue"), v.literal("Draft"));
+
+const billingFields = {
+  customer: v.string(),
+  customerId: v.optional(v.id("customers")),
+  amount: v.string(),
+  status: statusValidator,
+  issued: v.string(),
+  due: v.string(),
+};
 
 export const list = query({
   args: {},
@@ -24,7 +31,11 @@ export const get = query({
   },
 });
 
-/** Customer-portal invoice list — only this customer's own billing rows. */
+/**
+ * Customer-portal invoice list — only this customer's own billing rows.
+ * Prefers the real customerId FK; falls back to the old name/company
+ * string match for invoices created before that field existed.
+ */
 export const listMine = query({
   args: {},
   handler: async (ctx) => {
@@ -32,13 +43,13 @@ export const listMine = query({
     if (!customer) return [];
     const docs = await ctx.db.query("billing").order("desc").collect();
     return docs
-      .filter((d) => d.customer === customer.name || d.customer === customer.company)
+      .filter((d) => (d.customerId ? d.customerId === customer._id : d.customer === customer.name || d.customer === customer.company))
       .map((d) => ({ id: d._id, ...d }));
   },
 });
 
 export const create = mutation({
-  args: { customer: v.string(), amount: v.string(), status: statusValidator, issued: v.string(), due: v.string() },
+  args: billingFields,
   handler: async (ctx, args) => {
     await requireRole(ctx, ["admin", "manager", "staff"]);
     return await ctx.db.insert("billing", args);
@@ -46,7 +57,7 @@ export const create = mutation({
 });
 
 export const update = mutation({
-  args: { id: v.id("billing"), customer: v.string(), amount: v.string(), status: statusValidator, issued: v.string(), due: v.string() },
+  args: { id: v.id("billing"), ...billingFields },
   handler: async (ctx, { id, ...fields }) => {
     await requireRole(ctx, ["admin", "manager", "staff"]);
     await ctx.db.patch(id, fields);
@@ -56,7 +67,6 @@ export const update = mutation({
 export const remove = mutation({
   args: { id: v.id("billing") },
   handler: async (ctx, { id }) => {
-    // Deletes are restricted to admins and managers.
     await requireRole(ctx, ["admin", "manager"]);
     await ctx.db.delete(id);
   },

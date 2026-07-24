@@ -2,15 +2,14 @@ import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { requireRole, getMyCustomerRecord } from "./lib/authz";
 
-const statusValidator = v.union(
-  v.literal("Todo"), v.literal("In Progress"), v.literal("Blocked"), v.literal("Done")
-);
+const statusValidator = v.union(v.literal("Todo"), v.literal("In Progress"), v.literal("Blocked"), v.literal("Done"));
 const priorityValidator = v.union(v.literal("Low"), v.literal("Medium"), v.literal("High"));
 
 const taskFields = {
   title: v.string(),
   description: v.string(),
   project: v.string(),
+  projectId: v.optional(v.id("projects")),
   assignee: v.string(),
   assigneeInitials: v.string(),
   tags: v.array(v.string()),
@@ -42,11 +41,11 @@ export const get = query({
 });
 
 /**
- * Customer-portal task breakdown for a single project — powers the
- * "what's actually being worked on" view under project monitoring.
- * Re-checks that the named project belongs to the signed-in customer
- * before returning any task rows, so a customer can't probe task data
- * for a project name that isn't theirs.
+ * Customer-portal task breakdown for a single project. Re-checks that the
+ * project belongs to the signed-in customer before returning any task rows
+ * (via the real customerId FK, falling back to the old client-string match
+ * for projects created before that field existed) so a customer can't probe
+ * task data for a project that isn't theirs.
  */
 export const listMineForProject = query({
   args: { project: v.string() },
@@ -55,13 +54,15 @@ export const listMineForProject = query({
     if (!customer) return [];
 
     const projects = await ctx.db.query("projects").collect();
-    const owns = projects.some(
-      (p) => p.name === project && (p.client === customer.company || p.client === customer.name)
-    );
+    const match = projects.find((p) => p.name === project);
+    if (!match) return [];
+    const owns = match.customerId
+      ? match.customerId === customer._id
+      : match.client === customer.company || match.client === customer.name;
     if (!owns) return [];
 
     const docs = await ctx.db.query("tasks").order("desc").collect();
-    return docs.filter((d) => d.project === project).map((d) => ({ id: d._id, ...d }));
+    return docs.filter((d) => (d.projectId ? d.projectId === match._id : d.project === project)).map((d) => ({ id: d._id, ...d }));
   },
 });
 
@@ -84,7 +85,6 @@ export const update = mutation({
 export const remove = mutation({
   args: { id: v.id("tasks") },
   handler: async (ctx, { id }) => {
-    // Deletes are restricted to admins and managers.
     await requireRole(ctx, ["admin", "manager"]);
     await ctx.db.delete(id);
   },
